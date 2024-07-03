@@ -2,8 +2,10 @@ import {BoardIds, BoardShim, complex, DataFilter, DetrendOperations, FilterTypes
 import {WebSocket} from 'ws'
 import yargs from 'yargs';
 import {hideBin} from 'yargs/helpers';
+import { config } from 'dotenv';
+import { InfluxDB, Point } from '@influxdata/influxdb-client';
 
-const wss = new WebSocket.Server({port: 8080});
+config();
 
 function sleep(ms: number) {
     return new Promise((resolve) => {
@@ -42,6 +44,12 @@ async function runExample(): Promise<void> {
             type: 'array',
             demandOption: true
         })
+        .option('websocketPort', {
+            alias: 'wp',
+            describe: 'Websocket port',
+            type: 'number',
+            default: 8080
+        })
         .option('saveToInflux', {
             alias: 's',
             describe: 'Save data to InfluxDB',
@@ -50,6 +58,15 @@ async function runExample(): Promise<void> {
         })
         .parse();
 
+    const websocketPort = (argv as any).websocketPort as number;
+    console.info(`Opening websocket server on port ${websocketPort}`)
+    const wss = new WebSocket.Server({port: websocketPort});
+
+    const influxDB = new InfluxDB({
+        url: process.env.INFLUXDB_URL as string,
+        token: process.env.INFLUXDB_TOKEN as string
+    });
+    const writeApi = influxDB.getWriteApi(process.env.INFLUXDB_ORG as string, process.env.INFLUXDB_BUCKET as string);
 
     const channelNames = (argv as any).channels as string[];
 
@@ -154,7 +171,7 @@ async function runExample(): Promise<void> {
             });
 
             if ((argv as any).saveToInflux) {
-                let writeToInflux = ""
+                let writeToInflux: Point[] = []
 
                 eegData.forEach((channel, index) => {
                     const channelName = channelNames[index]
@@ -162,21 +179,25 @@ async function runExample(): Promise<void> {
                     channel.raw.forEach((sample, index) => {
                         const timeEpochNanos = (startOfEpoch + index * 1000 / samplingRate) * 1000000
 
-                        writeToInflux += `brainwave_raw,channel="${channelName}" eeg=${sample} ${timeEpochNanos}\n`
+                        writeToInflux.push(new Point('brainwave_raw')
+                            .tag('channel', channelName)
+                            .floatField('eeg', sample)
+                            .timestamp(timeEpochNanos));
                     })
 
-                    writeToInflux += `brainwave_epoch,channel="${channelName}" `
-                    writeToInflux += `delta=${channel.bandPowers.delta},`
-                    writeToInflux += `theta=${channel.bandPowers.theta},`
-                    writeToInflux += `alpha=${channel.bandPowers.alpha},`
-                    writeToInflux += `beta=${channel.bandPowers.beta},`
-                    writeToInflux += `gamma=${channel.bandPowers.gamma},`
-                    writeToInflux += ` ${(startOfEpoch + ((samplesPerEpoch / samplingRate) * 1000)) * 1000000}\n`
+                    const epochPoint = new Point('brainwave_epoch')
+                        .tag('channel', channelName)
+                        .floatField('delta', channel.bandPowers.delta)
+                        .floatField('theta', channel.bandPowers.theta)
+                        .floatField('alpha', channel.bandPowers.alpha)
+                        .floatField('beta', channel.bandPowers.beta)
+                        .floatField('gamma', channel.bandPowers.gamma)
+                        .timestamp((startOfEpoch + ((samplesPerEpoch / samplingRate) * 1000)) * 1000000);
+
+                    writeToInflux.push(epochPoint);
                 })
 
-                console.info(writeToInflux)
-
-                // The actual writing not yet done
+                writeApi.writePoints(writeToInflux)
             }
         }
     }

@@ -1,4 +1,6 @@
 # Brainwave
+An electroencephalography (EEG) data processing and visualisation tool, using Node & Typescript.
+
 Connects to your EEG device, streams the EEG data, performs some processing, and outputs the results to websocket clients for visualisation.
 
 That visualiser (not currently included in this repo) could display something like the following (dummy synthetic data is used here):
