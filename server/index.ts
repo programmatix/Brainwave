@@ -44,6 +44,12 @@ async function runExample(): Promise<void> {
             type: 'array',
             demandOption: true
         })
+       .option('serialPort', {
+            alias: 'sp',
+            describe: 'Serial port e.g. /dev/ttyUSB0 (Linux) or COM11 (Windows)',
+            type: 'string',
+            demandOption: true
+        })
         .option('websocketPort', {
             alias: 'wp',
             describe: 'Websocket port',
@@ -61,6 +67,7 @@ async function runExample(): Promise<void> {
     const websocketPort = (argv as any).websocketPort as number;
     console.info(`Opening websocket server on port ${websocketPort}`)
     const wss = new WebSocket.Server({port: websocketPort});
+    const serialPort = (argv as any).serialPort as string;
 
     const influxDB = new InfluxDB({
         url: process.env.INFLUXDB_URL as string,
@@ -75,7 +82,7 @@ async function runExample(): Promise<void> {
     const boardId = (argv as any).boardId as BoardIds;
     console.info("Connecting to board")
     const board = new BoardShim(boardId, {
-        serialPort: "COM11"
+        serialPort: serialPort
     });
     const eegChannels = BoardShim.getEegChannels(boardId).slice(0, channelNames.length);
     const samplingRate = BoardShim.getSamplingRate(boardId);
@@ -197,6 +204,7 @@ async function runExample(): Promise<void> {
                     writeToInflux.push(epochPoint);
                 })
 
+		console.info(`Saving ${writeToInflux.length} points to Influx`)
                 writeApi.writePoints(writeToInflux)
             }
         }
