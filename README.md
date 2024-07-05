@@ -19,7 +19,16 @@ Clone the project then:
 ```
 cd server
 npm install
-npx ts-node index.ts --boardId -1 --channels F3 T4 
+
+# With synthetic data
+npx ts-node index.ts --boardId -1 --channels F3 T4
+
+# With OpenBCI Cyton 
+npx ts-node index.ts --boardId 0 --channels F3 T4
+
+# With Neurosity Crown 
+npx ts-node index.ts --boardId 23 --channels C3 C4 CP3 CP4 F5 F6 PO3 PO4
 ```
 
 Replace with your Brainflow board id (using the synthetic board in the example above), and the names of the EEG channels.
+

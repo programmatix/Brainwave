@@ -23,6 +23,7 @@ export interface BandPowers {
 
 interface PerChannel {
     channelIdx: number,
+    channelName: string,
     raw: number[]
     filtered: number[]
     fft: complex[]
@@ -30,7 +31,7 @@ interface PerChannel {
     overThresholdIndices: number[]
 }
 
-async function runExample(): Promise<void> {
+async function runBrainflow(): Promise<void> {
     const argv = yargs(hideBin(process.argv))
         .option('boardId', {
             alias: 'b',
@@ -56,8 +57,13 @@ async function runExample(): Promise<void> {
             type: 'number',
             default: 8080
         })
+        .option('saveToBrainflowFile', {
+            alias: 'f',
+            describe: "Save the raw unprocessed data to file, in Brainflow's format",
+            type: 'string',
+        })
         .option('saveToInflux', {
-            alias: 's',
+            alias: 'i',
             describe: 'Save data to InfluxDB',
             type: 'boolean',
             default: false
@@ -65,6 +71,9 @@ async function runExample(): Promise<void> {
         .parse();
 
     const websocketPort = (argv as any).websocketPort as number;
+    const saveToInflux = (argv as any).saveToInflux as boolean
+    const saveToBrainflowFile: string | undefined = (argv as any).saveToBrainflowFile
+
     console.info(`Opening websocket server on port ${websocketPort}`)
     const wss = new WebSocket.Server({port: websocketPort});
     const serialPort = (argv as any).serialPort as string;
@@ -85,6 +94,7 @@ async function runExample(): Promise<void> {
         serialPort: serialPort
     });
     const eegChannels = BoardShim.getEegChannels(boardId).slice(0, channelNames.length);
+    console.info(`EEG Channels: ${eegChannels}`)
     const samplingRate = BoardShim.getSamplingRate(boardId);
 
     let sampleBuffer: number[][] = Array(eegChannels.length).fill(null).map(() => []);
@@ -93,6 +103,10 @@ async function runExample(): Promise<void> {
     board.prepareSession();
     console.info("Starting stream")
     board.startStream();
+    if (saveToBrainflowFile) {
+        console.info("Writing to file " + saveToBrainflowFile)
+        board.addStreamer(`file://${saveToBrainflowFile}:w`)
+    }
     console.info("Stream started")
 
     let startOfEpoch = new Date().getTime();
@@ -109,8 +123,12 @@ async function runExample(): Promise<void> {
 
         // Collect until we have enough samples.
         const numSamples = sampleBuffer[eegChannels[0]].length
+        console.info(`Collected ${numSamples} samples`)
         if (numSamples >= samplesPerEpoch) {
-            const eegData: PerChannel[] = eegChannels.map((channel, index) => {
+
+
+            const eegData: PerChannel[] = []
+            eegChannels.forEach((channel, index) => {
                 const raw = sampleBuffer[index].slice(0, samplesPerEpoch);
                 // console.info(`Processing ${raw.length} samples from ${sampleBuffer[index].length}`)
 
@@ -120,6 +138,7 @@ async function runExample(): Promise<void> {
 
                 if (filtered.some(value => value === undefined)) {
                     console.warn('Filtered data contains undefined values');
+                    return
                 }
 
                 DataFilter.detrend(filtered, DetrendOperations.LINEAR)
@@ -148,7 +167,7 @@ async function runExample(): Promise<void> {
                     return indices;
                 }, []);
 
-                return {
+                eegData.push({
                     channelIdx: index,
                     channelName: channelNames[index],
                     raw: raw,
@@ -162,7 +181,7 @@ async function runExample(): Promise<void> {
                         gamma: bandPowers[4]
                     },
                     overThresholdIndices: overThresholdIndices
-                }
+                })
             });
 
             startOfEpoch = new Date().getTime();
@@ -177,7 +196,7 @@ async function runExample(): Promise<void> {
                 }
             });
 
-            if ((argv as any).saveToInflux) {
+            if (saveToInflux) {
                 let writeToInflux: Point[] = []
 
                 eegData.forEach((channel, index) => {
@@ -213,4 +232,4 @@ async function runExample(): Promise<void> {
     board.releaseSession();
 }
 
-runExample();
+runBrainflow();
